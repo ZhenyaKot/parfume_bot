@@ -5,19 +5,16 @@ from aiogram import Bot, types, F
 from filters.chat_types import ChatTypeFilter
 
 from keyboards.reply import create_keyboard
+from keyboards.inline import get_user_main_buttons
 
 user_router = Router()
 user_router.message.filter(ChatTypeFilter(['private']))
-
-USER_KEYBOARD = create_keyboard('меню', 'каталог', 'способы оплаты',
-                                placeholder='что вас интересует',
-                                sizes=(2,))
 
 
 @user_router.message(CommandStart())
 async def start_cmd(message: types.Message):
     await message.answer('Добро пожаловать в наш магазин!\nЯ виртуальный помощник.\nЧто хотите сделать?',
-                         reply_markup=USER_KEYBOARD
+                         reply_markup=get_user_main_buttons()
                          )
 
 

@@ -1,12 +1,17 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, update
-from database.models import Product
+from sqlalchemy.orm import selectinload
+from database.models import Product, Category
+
+
+# работа с продуктами
 
 
 async def orm_add_product(session: AsyncSession, data: dict):
     objects = Product(
         name=data['name'],
         description=data['description'],
+        category_id=data['category_id'],
         price=float(data['price']),
         discount=float(data['discount']),
         quantity=int(data['quantity']),
@@ -17,7 +22,13 @@ async def orm_add_product(session: AsyncSession, data: dict):
 
 
 async def orm_get_products(session: AsyncSession):
-    result = await session.execute(select(Product))
+    result = await session.execute(select(Product).options(selectinload(Product.category)))
+    return result.scalars().all()
+
+
+async def orm_get_products_by_category(session: AsyncSession, category_id: int):
+    result = await session.execute(
+        select(Product).options(selectinload(Product.category)).where(Product.category_id == category_id))
     return result.scalars().all()
 
 
@@ -66,3 +77,26 @@ async def orm_update_product(
     result = await session.execute(stmt_get)
     updated_product = result.scalar_one_or_none()
     return updated_product
+
+
+# работа с категориями
+
+async def orm_get_all_categories(session: AsyncSession):
+    result = await session.execute(select(Category))
+    return result.scalars().all()
+
+
+async def orm_get_category(session: AsyncSession, category_id: int):
+    result = await session.execute(select(Category).where(Category.id == category_id))
+    return result.scalar()
+
+
+async def orm_add_category(session: AsyncSession, name: str):
+    objects = Category(name=name)
+    session.add(objects)
+    await session.commit()
+
+
+async def orm_delete_category(session: AsyncSession, category_id: int):
+    await session.execute(delete(Category).where(Category.id == category_id))
+    await session.commit()

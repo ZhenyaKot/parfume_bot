@@ -20,7 +20,7 @@ from database.orm_query import (
     orm_delete_category,
     orm_get_category,
     orm_get_all_categories,
-    orm_get_products_by_category
+    orm_get_products_by_category, orm_get_all_banners, orm_change_banner_image
 )
 
 admin_router = Router()
@@ -29,6 +29,7 @@ admin_router.message.filter(ChatTypeFilter(['private']), IsAdmin())
 ADMIN_KEYBOARD = create_keyboard('добавить товар',
                                  'список товаров',
                                  'посмотреть/добавить категорию',
+                                 'Добавить/Изменить баннер',
                                  placeholder='выберите действие',
                                  sizes=(2,))
 
@@ -85,7 +86,7 @@ async def show_products(callback: types.CallbackQuery, session: AsyncSession):
     products = await orm_get_products_by_category(session, category_id=category_id)
 
     if not products:
-        await callback.answer('Список товаров пуст 😔')
+        await callback.message.answer('Список товаров пуст 😔')
         return
 
     for product in products:
@@ -119,6 +120,40 @@ async def delete_product(callback: types.CallbackQuery, session: AsyncSession):
     await callback.answer('Товар успешно удален!')
     await callback.message.answer(f'Товар успешно удален!')
     await callback.answer()
+
+
+# Работа с добавлением/обновлением баннеров
+
+class AddBanner(StatesGroup):
+    image = State()
+
+
+@admin_router.message(StateFilter(None), F.text == 'Добавить/Изменить баннер')
+async def add_image_to_banner(message: types.Message, state: FSMContext, session: AsyncSession):
+    names_banners = [page.name for page in await orm_get_all_banners(session)]
+    await message.answer(f'Загрузите изображение баннера.\nВ описании укажите для какой страницы:\
+                        \n{", ".join(names_banners)}')
+    await state.set_state(AddBanner.image)
+
+
+@admin_router.message(AddBanner.image, F.photo)
+async def add_banner(message: types.Message, state: FSMContext, session: AsyncSession):
+    image_id = message.photo[-1].file_id
+    for_page = message.caption.strip()
+    names_banners = [page.name for page in await orm_get_all_banners(session)]
+
+    if for_page not in names_banners:
+        await message.answer(f'Страница не найдена.\nВведите доступное название страницы, например:\
+                            \n{", ".join(names_banners)}')
+        return
+    await orm_change_banner_image(session, for_page, image_id)
+    await message.answer("Баннер добавлен/изменен.")
+    await state.clear()
+
+
+@admin_router.message(AddBanner.image)
+async def add_banner2(message: types.Message):
+    await message.answer("Отправьте фото баннера или отмена")
 
 
 # Работа с обновлением данных

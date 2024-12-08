@@ -1,33 +1,51 @@
 from aiogram.filters import CommandStart, or_f, Command
 from aiogram import types, Router
 from aiogram import Bot, types, F
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from database.orm_query import orm_add_user, orm_add_to_cart
 from filters.chat_types import ChatTypeFilter
+from handlers.menu_processing import get_menu_content
 
-from keyboards.reply import create_keyboard
-from keyboards.inline import get_user_main_buttons
+from keyboards.inline import MenuCallback, start_buttons
 
 user_router = Router()
 user_router.message.filter(ChatTypeFilter(['private']))
 
 
 @user_router.message(CommandStart())
-async def start_cmd(message: types.Message):
-    await message.answer('Добро пожаловать в наш магазин!\nЯ виртуальный помощник.\nЧто хотите сделать?',
-                         reply_markup=get_user_main_buttons()
-                         )
+async def start_cmd(message: types.Message, session: AsyncSession):
+    media, reply_markup = await get_menu_content(session, level=0, menu_name='main')
+    await message.answer_photo(media.media, caption=media.caption, reply_markup=reply_markup)
 
 
-@user_router.message(or_f(F.text.lower() == 'меню', Command('menu')))
-async def menu_cmd(message: types.Message):
-    await message.answer('вот вам меню:\n1...\n2...\n3...')
+async def add_to_cart(callback: types.CallbackQuery, callback_data: MenuCallback, session: AsyncSession):
+    user = callback.from_user
+    await orm_add_user(
+        session,
+        user_id=user.id,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        phone=None,
+    )
+    await orm_add_to_cart(session, user_id=user.id, product_id=callback_data.product_id)
+    await callback.answer("Товар добавлен в корзину.")
 
 
-@user_router.message(or_f(F.text.lower() == 'каталог', Command('catalog')))
-async def catalog_cmd(message: types.Message):
-    await message.answer('Вот каталог товаров')
+@user_router.callback_query(MenuCallback.filter())
+async def user_menu(callback: types.CallbackQuery, session: AsyncSession, callback_data: MenuCallback):
+    if callback_data.menu_name == 'add_to_cart':
+        await add_to_cart(callback, callback_data, session)
+        return
 
-
-@user_router.message(or_f(F.text.lower().contains('плат'), Command('payment')))
-async def payment_cmd(message: types.Message):
-    await message.answer('оплата производится банковской картой или QR-кодом')
+    media, reply_markup = await get_menu_content(
+        session,
+        level=callback_data.level,
+        menu_name=callback_data.menu_name,
+        category=callback_data.category,
+        page=callback_data.page,
+        product_id=callback_data.product_id,
+        user_id=callback.from_user.id,
+    )
+    await callback.message.edit_media(media=media, reply_markup=reply_markup)
+    await callback.answer()
